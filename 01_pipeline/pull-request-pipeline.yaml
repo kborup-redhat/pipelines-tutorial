@@ -1,28 +1,10 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  creationTimestamp: '2024-10-31T15:17:45Z'
-  generation: 9
-  managedFields:
-    - apiVersion: tekton.dev/v1
-      fieldsType: FieldsV1
-      fieldsV1:
-        'f:spec':
-          .: {}
-          'f:params': {}
-          'f:tasks': {}
-          'f:workspaces': {}
-      manager: Mozilla
-      operation: Update
-      time: '2024-10-31T16:13:08Z'
   name: linter-pipeline
-  namespace: luka-rocks
-  resourceVersion: '1989399'
-  uid: a5371503-e80e-4190-a4f5-c4c24690e4bf
 spec:
   params:
-    - default: 'https://github.com/kborup-redhat/tekton-linter-test/pull/1'
-      name: url
+    - name: url
       type: string
     - default: github-auth-token
       name: secret-key-ref
@@ -110,6 +92,89 @@ spec:
               NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
               COMMENT="How about right now? It's $NOW"
               echo $COMMENT > $(workspaces.pr.path)/comments/$NOW
+        workspaces:
+          - name: pr
+      workspaces:
+        - name: pr
+          workspace: shared-workspace
+    - name: pull-request-update
+      params:
+        - name: mode
+          value: upload
+        - name: url
+          value: $(params.url)
+        - name: provider
+          value: github
+        - name: secret-key-ref
+          value: $(params.secret-key-ref)
+      runAfter:
+        - add-comment
+      taskRef:
+        kind: Task
+        name: pull-request
+      workspaces:
+        - name: pr
+          workspace: shared-workspace
+    - name: clear-workspace-after
+      runAfter:
+        - pull-request-update
+      taskRef:
+        kind: Task
+        name: clear-workspace
+      workspaces:
+        - name: w
+          workspace: shared-workspace
+    - name: pull-request-fetch-after
+      params:
+        - name: mode
+          value: download
+        - name: url
+          value: $(params.url)
+        - name: provider
+          value: github
+        - name: secret-key-ref
+          value: $(params.secret-key-ref)
+      runAfter:
+        - clear-workspace-after
+      taskRef:
+        kind: Task
+        name: pull-request
+      workspaces:
+        - name: pr
+          workspace: shared-workspace
+    - name: count-comments-after
+      runAfter:
+        - pull-request-fetch-after
+      taskRef:
+        kind: Task
+        name: count-comments
+      workspaces:
+        - name: pr
+          workspace: shared-workspace
+    - name: check-count
+      params:
+        - name: before-count
+          value: $(tasks.count-comments-before.results.count)
+        - name: after-count
+          value: $(tasks.count-comments-after.results.count)
+      runAfter:
+        - count-comments-after
+      taskSpec:
+        metadata: {}
+        params:
+          - name: before-count
+            type: string
+          - name: after-count
+            type: string
+        spec: null
+        steps:
+          - computeResources: {}
+            image: 'registry.access.redhat.com/ubi8/ubi-minimal:8.10-1086'
+            name: echo
+            script: |
+              #!/usr/bin/env bash
+              set -xe
+              [[ $(params.after-count) -gt $(params.before-count) ]]
         workspaces:
           - name: pr
       workspaces:
