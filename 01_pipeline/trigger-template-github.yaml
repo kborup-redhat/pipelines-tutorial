@@ -1,0 +1,51 @@
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: github-template
+spec:
+  params:
+    - name: gitprurl
+    # Used for test TaskRun
+    # - name: gitrevision
+    # - name: gitrepositoryurl
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: linter-pipeline-
+        labels:
+          tekton.dev/pipeline: linter-pipeline
+        namespace: luka-rocks
+      spec:
+        params:
+          - name: url
+            value: $(tt.params.gitprurl)
+          - name: secret-key-ref
+            value: github-auth-token
+        pipelineRef:
+          name: linter-pipeline
+        taskRunTemplate:
+          serviceAccountName: pipeline
+        timeouts:
+          pipeline: 1h0m0s
+        workspaces:
+          - name: shared-workspace
+            persistentVolumeClaim:
+              claimName: shared-task-storage
+#
+#### TaskRun to test the trigger
+#    - apiVersion: tekton.dev/v1beta1
+#      kind: TaskRun
+#      metadata:
+#        generateName: github-run-
+#      spec:
+#        taskSpec:
+#          steps:
+#              # OCP CLI image
+#            - image: 'quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:8255266c07d4dec7290e48b35b53f7aacb20bc6b642ee096b3bf31df83562af5'
+#              script: |
+#                #! /bin/bash
+#                echo "Revision is : $(tt.params.gitrevision)."
+#                echo "RepoURL is $(tt.params.gitrepositoryurl)"
+#                echo "PR URL is : $(tt.params.gitprurl)"
