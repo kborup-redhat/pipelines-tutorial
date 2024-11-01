@@ -1,0 +1,119 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  creationTimestamp: '2024-10-31T15:17:45Z'
+  generation: 9
+  managedFields:
+    - apiVersion: tekton.dev/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:spec':
+          .: {}
+          'f:params': {}
+          'f:tasks': {}
+          'f:workspaces': {}
+      manager: Mozilla
+      operation: Update
+      time: '2024-10-31T16:13:08Z'
+  name: linter-pipeline
+  namespace: luka-rocks
+  resourceVersion: '1989399'
+  uid: a5371503-e80e-4190-a4f5-c4c24690e4bf
+spec:
+  params:
+    - default: 'https://github.com/kborup-redhat/tekton-linter-test/pull/1'
+      name: url
+      type: string
+    - default: github-auth-token
+      name: secret-key-ref
+      type: string
+  tasks:
+    - name: clear-workspace-before
+      taskRef:
+        kind: Task
+        name: clear-workspace
+      workspaces:
+        - name: w
+          workspace: shared-workspace
+    - name: fetch-repository
+      params:
+        - name: url
+          value: 'https://github.com/kborup-redhat/tekton-linter-test'
+        - name: revision
+          value: linter-test
+        - name: subdirectory
+          value: ''
+        - name: deleteExisting
+          value: 'true'
+      runAfter:
+        - clear-workspace-before
+      taskRef:
+        kind: Task
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+    - name: yaml-lint-run
+      params:
+        - name: args
+          value:
+            - .
+      runAfter:
+        - fetch-repository
+      taskRef:
+        kind: Task
+        name: yaml-lint
+      workspaces:
+        - name: shared-workspace
+          workspace: shared-workspace
+    - name: pull-request-fetch
+      params:
+        - name: mode
+          value: download
+        - name: url
+          value: $(params.url)
+        - name: provider
+          value: github
+        - name: secret-key-ref
+          value: $(params.secret-key-ref)
+      runAfter:
+        - yaml-lint-run
+      taskRef:
+        kind: Task
+        name: pull-request
+      workspaces:
+        - name: pr
+          workspace: shared-workspace
+    - name: count-comments-before
+      runAfter:
+        - pull-request-fetch
+      taskRef:
+        kind: Task
+        name: count-comments
+      workspaces:
+        - name: pr
+          workspace: shared-workspace
+    - name: add-comment
+      runAfter:
+        - count-comments-before
+      taskSpec:
+        metadata: {}
+        spec: null
+        steps:
+          - computeResources: {}
+            image: 'registry.access.redhat.com/ubi8/ubi-minimal:8.10-1086'
+            name: write-comment
+            script: |
+              #!/usr/bin/env bash
+              set -xe
+
+              NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+              COMMENT="How about right now? It's $NOW"
+              echo $COMMENT > $(workspaces.pr.path)/comments/$NOW
+        workspaces:
+          - name: pr
+      workspaces:
+        - name: pr
+          workspace: shared-workspace
+  workspaces:
+    - name: shared-workspace

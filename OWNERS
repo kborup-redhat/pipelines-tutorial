@@ -1,8 +1,0 @@
-# The OWNERS file is used by prow to automatically merge approved PRs.
-noone:
-- ever
-approvers:
-- pipeline-tutorial-approvers
-
-reviewers:
-- pipeline-tutorial-reviewers

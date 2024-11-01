@@ -1,0 +1,505 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  creationTimestamp: '2024-10-31T15:21:58Z'
+  generation: 2
+  managedFields:
+    - apiVersion: tekton.dev/v1beta1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:spec':
+          .: {}
+          'f:workspaces': {}
+      manager: Mozilla
+      operation: Update
+      time: '2024-10-31T15:21:58Z'
+    - apiVersion: tekton.dev/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:spec':
+          'f:steps': {}
+      manager: Mozilla
+      operation: Update
+      time: '2024-10-31T15:25:03Z'
+  name: clear-workspace
+  namespace: luka-rocks
+  resourceVersion: '1945953'
+  uid: 09412b56-4137-4e66-899d-2d64d0303aca
+spec:
+  steps:
+    - computeResources: {}
+      image: 'registry.access.redhat.com/ubi9/ubi-minimal:9.4-1227.1726694542'
+      name: clear
+      script: |
+        #!/usr/bin/env bash
+        set -xe
+        rm -rf $(workspaces.w.path)/*
+  workspaces:
+    - name: w
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  creationTimestamp: '2024-10-31T15:27:13Z'
+  generation: 1
+  managedFields:
+    - apiVersion: tekton.dev/v1beta1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:spec':
+          .: {}
+          'f:results': {}
+          'f:steps': {}
+          'f:workspaces': {}
+      manager: Mozilla
+      operation: Update
+      time: '2024-10-31T15:27:13Z'
+  name: count-comments
+  namespace: luka-rocks
+  resourceVersion: '1947927'
+  uid: 7521c7ef-8079-4415-b7c8-32c0e3dd891b
+spec:
+  results:
+    - description: the number of comments on the PR
+      name: count
+      type: string
+  steps:
+    - computeResources: {}
+      image: 'registry.access.redhat.com/ubi9/ubi-minimal:9.4-1227.1726694542'
+      name: count
+      script: |
+        #!/usr/bin/env bash
+        set -xe
+
+        NUM=$(ls $(workspaces.pr.path)/comments | wc -l )
+        echo -n $NUM > $(results.count.path)
+  workspaces:
+    - name: pr
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  annotations:
+    tekton.dev/categories: Git
+    tekton.dev/displayName: pull request
+    tekton.dev/pipelines.minVersion: 0.12.1
+    tekton.dev/platforms: 'linux/amd64,linux/s390x,linux/ppc64le'
+    tekton.dev/tags: SCM
+  resourceVersion: '1975673'
+  name: pull-request
+  uid: 4cad6690-548b-4d2c-9484-3a51f43e4fa5
+  creationTimestamp: '2024-10-31T15:59:24Z'
+  generation: 1
+  managedFields:
+    - apiVersion: tekton.dev/v1beta1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:metadata':
+          'f:annotations':
+            .: {}
+            'f:tekton.dev/categories': {}
+            'f:tekton.dev/displayName': {}
+            'f:tekton.dev/pipelines.minVersion': {}
+            'f:tekton.dev/platforms': {}
+            'f:tekton.dev/tags': {}
+          'f:labels':
+            .: {}
+            'f:app.kubernetes.io/version': {}
+        'f:spec':
+          .: {}
+          'f:description': {}
+          'f:params': {}
+          'f:steps': {}
+          'f:workspaces': {}
+      manager: Mozilla
+      operation: Update
+      time: '2024-10-31T15:59:24Z'
+  namespace: luka-rocks
+  labels:
+    app.kubernetes.io/version: '0.1'
+spec:
+  description: |-
+    This Task allows a user to interact with an SCM (source control management) system through an abstracted interface
+    This Task works with both public SCM instances and self-hosted/enterprise GitHub/GitLab instances. In download mode, this Task will look at the state of an existing pull request and populate the pr workspace with the state of the pull request, including the .MANIFEST file. In upload mode, this Task will look at the contents of the pr workspace and compare it to the .MANIFEST file (if it exists).
+  params:
+    - description: 'If "download", the state of the pull request at `url` will be fetched. If "upload" then the pull request at `url` will be updated.'
+      name: mode
+      type: string
+    - description: 'The URL of the Pull Reuqest, e.g. `https://github.com/bobcatfish/catservice/pull/16`'
+      name: url
+      type: string
+    - description: 'The type of SCM system, currently `github` or `gitlab`'
+      name: provider
+      type: string
+    - description: The name of an opaque secret containing a key called "token" with a base64 encoded SCM token
+      name: secret-key-ref
+      type: string
+    - default: 'false'
+      description: 'If "true", certificate validation will be disabled'
+      name: insecure-skip-tls-verify
+      type: string
+  steps:
+    - args:
+        - '-url'
+        - $(params.url)
+        - '-path'
+        - $(workspaces.pr.path)
+        - '-mode'
+        - $(params.mode)
+        - '-provider'
+        - $(params.provider)
+        - '-insecure-skip-tls-verify'
+        - $(params.insecure-skip-tls-verify)
+      command:
+        - /ko-app/pullrequest-init
+      computeResources: {}
+      env:
+        - name: AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: token
+              name: $(params.secret-key-ref)
+      image: 'gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/pullrequest-init@sha256:69633ecd0e948f6462c61bb9e008b940a05b143ef51c67e6e4093278a23dac53'
+      name: pullrequest-init
+  workspaces:
+    - name: pr
+
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  annotations:
+    tekton.dev/categories: Code Quality
+    tekton.dev/displayName: YAML linter
+    tekton.dev/pipelines.minVersion: 0.12.1
+    tekton.dev/platforms: linux/amd64
+    tekton.dev/tags: linter
+  resourceVersion: '259737'
+  name: yaml-lint
+  uid: d57c3f3e-c44e-478a-a933-5d80c320f2fe
+  creationTimestamp: '2024-10-28T13:52:49Z'
+  generation: 1
+  managedFields:
+    - apiVersion: tekton.dev/v1beta1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:metadata':
+          'f:annotations':
+            .: {}
+            'f:tekton.dev/categories': {}
+            'f:tekton.dev/displayName': {}
+            'f:tekton.dev/pipelines.minVersion': {}
+            'f:tekton.dev/platforms': {}
+            'f:tekton.dev/tags': {}
+          'f:labels':
+            .: {}
+            'f:app.kubernetes.io/version': {}
+        'f:spec':
+          .: {}
+          'f:description': {}
+          'f:params': {}
+          'f:steps': {}
+          'f:workspaces': {}
+      manager: Mozilla
+      operation: Update
+      time: '2024-10-28T13:52:49Z'
+  namespace: luka-rocks
+  labels:
+    app.kubernetes.io/version: '0.1'
+spec:
+  description: This task can be used to perform lint check on YAML files
+  params:
+    - default:
+        - '--help'
+      description: extra args needs to append
+      name: args
+      type: array
+  steps:
+    - args:
+        - $(params.args)
+      command:
+        - yamllint
+      computeResources: {}
+      image: 'docker.io/cytopia/yamllint:1.23@sha256:e9deea51bbdc35950cacf6594dab94100d9bbf5c987540b8874167d58e6bdce2'
+      name: lint-yaml-files
+      workingDir: $(workspaces.shared-workspace.path)
+  workspaces:
+    - description: A workspace that contains the fetched git repository.
+      name: shared-workspace
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  annotations:
+    tekton.dev/categories: Git
+    tekton.dev/displayName: git clone
+    tekton.dev/pipelines.minVersion: 0.38.0
+    tekton.dev/platforms: 'linux/amd64,linux/s390x,linux/ppc64le,linux/arm64'
+    tekton.dev/tags: git
+  resourceVersion: '259542'
+  name: git-clone
+  uid: 42f50d06-43fe-4cc3-9c79-33222de45912
+  creationTimestamp: '2024-10-28T13:52:34Z'
+  generation: 1
+  managedFields:
+    - apiVersion: tekton.dev/v1beta1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:metadata':
+          'f:annotations':
+            .: {}
+            'f:tekton.dev/categories': {}
+            'f:tekton.dev/displayName': {}
+            'f:tekton.dev/pipelines.minVersion': {}
+            'f:tekton.dev/platforms': {}
+            'f:tekton.dev/tags': {}
+          'f:labels':
+            .: {}
+            'f:app.kubernetes.io/version': {}
+        'f:spec':
+          .: {}
+          'f:description': {}
+          'f:params': {}
+          'f:results': {}
+          'f:steps': {}
+          'f:workspaces': {}
+      manager: Mozilla
+      operation: Update
+      time: '2024-10-28T13:52:34Z'
+  namespace: luka-rocks
+  labels:
+    app.kubernetes.io/version: '0.9'
+spec:
+  description: |-
+    These Tasks are Git tasks to work with repositories used by other tasks in your Pipeline.
+    The git-clone Task will clone a repo from the provided url into the output Workspace. By default the repo will be cloned into the root of your Workspace. You can clone into a subdirectory by setting this Task's subdirectory param. This Task also supports sparse checkouts. To perform a sparse checkout, pass a list of comma separated directory patterns to this Task's sparseCheckoutDirectories param.
+  params:
+    - description: Repository URL to clone from.
+      name: url
+      type: string
+    - default: ''
+      description: 'Revision to checkout. (branch, tag, sha, ref, etc...)'
+      name: revision
+      type: string
+    - default: ''
+      description: Refspec to fetch before checking out revision.
+      name: refspec
+      type: string
+    - default: 'true'
+      description: Initialize and fetch git submodules.
+      name: submodules
+      type: string
+    - default: '1'
+      description: 'Perform a shallow clone, fetching only the most recent N commits.'
+      name: depth
+      type: string
+    - default: 'true'
+      description: Set the `http.sslVerify` global git config. Setting this to `false` is not advised unless you are sure that you trust your git remote.
+      name: sslVerify
+      type: string
+    - default: ca-bundle.crt
+      description: file name of mounted crt using ssl-ca-directory workspace. default value is ca-bundle.crt.
+      name: crtFileName
+      type: string
+    - default: ''
+      description: Subdirectory inside the `output` Workspace to clone the repo into.
+      name: subdirectory
+      type: string
+    - default: ''
+      description: Define the directory patterns to match or exclude when performing a sparse checkout.
+      name: sparseCheckoutDirectories
+      type: string
+    - default: 'true'
+      description: Clean out the contents of the destination directory if it already exists before cloning.
+      name: deleteExisting
+      type: string
+    - default: ''
+      description: HTTP proxy server for non-SSL requests.
+      name: httpProxy
+      type: string
+    - default: ''
+      description: HTTPS proxy server for SSL requests.
+      name: httpsProxy
+      type: string
+    - default: ''
+      description: Opt out of proxying HTTP/HTTPS requests.
+      name: noProxy
+      type: string
+    - default: 'true'
+      description: Log the commands that are executed during `git-clone`'s operation.
+      name: verbose
+      type: string
+    - default: 'gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/git-init:v0.40.2'
+      description: The image providing the git-init binary that this Task runs.
+      name: gitInitImage
+      type: string
+    - default: /home/git
+      description: |
+        Absolute path to the user's home directory.
+      name: userHome
+      type: string
+  results:
+    - description: The precise commit SHA that was fetched by this Task.
+      name: commit
+      type: string
+    - description: The precise URL that was fetched by this Task.
+      name: url
+      type: string
+    - description: The epoch timestamp of the commit that was fetched by this Task.
+      name: committer-date
+      type: string
+  steps:
+    - computeResources: {}
+      env:
+        - name: HOME
+          value: $(params.userHome)
+        - name: PARAM_URL
+          value: $(params.url)
+        - name: PARAM_REVISION
+          value: $(params.revision)
+        - name: PARAM_REFSPEC
+          value: $(params.refspec)
+        - name: PARAM_SUBMODULES
+          value: $(params.submodules)
+        - name: PARAM_DEPTH
+          value: $(params.depth)
+        - name: PARAM_SSL_VERIFY
+          value: $(params.sslVerify)
+        - name: PARAM_CRT_FILENAME
+          value: $(params.crtFileName)
+        - name: PARAM_SUBDIRECTORY
+          value: $(params.subdirectory)
+        - name: PARAM_DELETE_EXISTING
+          value: $(params.deleteExisting)
+        - name: PARAM_HTTP_PROXY
+          value: $(params.httpProxy)
+        - name: PARAM_HTTPS_PROXY
+          value: $(params.httpsProxy)
+        - name: PARAM_NO_PROXY
+          value: $(params.noProxy)
+        - name: PARAM_VERBOSE
+          value: $(params.verbose)
+        - name: PARAM_SPARSE_CHECKOUT_DIRECTORIES
+          value: $(params.sparseCheckoutDirectories)
+        - name: PARAM_USER_HOME
+          value: $(params.userHome)
+        - name: WORKSPACE_OUTPUT_PATH
+          value: $(workspaces.output.path)
+        - name: WORKSPACE_SSH_DIRECTORY_BOUND
+          value: $(workspaces.ssh-directory.bound)
+        - name: WORKSPACE_SSH_DIRECTORY_PATH
+          value: $(workspaces.ssh-directory.path)
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+          value: $(workspaces.basic-auth.bound)
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+          value: $(workspaces.basic-auth.path)
+        - name: WORKSPACE_SSL_CA_DIRECTORY_BOUND
+          value: $(workspaces.ssl-ca-directory.bound)
+        - name: WORKSPACE_SSL_CA_DIRECTORY_PATH
+          value: $(workspaces.ssl-ca-directory.path)
+      image: $(params.gitInitImage)
+      name: clone
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+
+        if [ "${PARAM_VERBOSE}" = "true" ] ; then
+          set -x
+        fi
+
+        if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ] ; then
+          cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" "${PARAM_USER_HOME}/.git-credentials"
+          cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.gitconfig" "${PARAM_USER_HOME}/.gitconfig"
+          chmod 400 "${PARAM_USER_HOME}/.git-credentials"
+          chmod 400 "${PARAM_USER_HOME}/.gitconfig"
+        fi
+
+        if [ "${WORKSPACE_SSH_DIRECTORY_BOUND}" = "true" ] ; then
+          cp -R "${WORKSPACE_SSH_DIRECTORY_PATH}" "${PARAM_USER_HOME}"/.ssh
+          chmod 700 "${PARAM_USER_HOME}"/.ssh
+          chmod -R 400 "${PARAM_USER_HOME}"/.ssh/*
+        fi
+
+        if [ "${WORKSPACE_SSL_CA_DIRECTORY_BOUND}" = "true" ] ; then
+           export GIT_SSL_CAPATH="${WORKSPACE_SSL_CA_DIRECTORY_PATH}"
+           if [ "${PARAM_CRT_FILENAME}" != "" ] ; then
+              export GIT_SSL_CAINFO="${WORKSPACE_SSL_CA_DIRECTORY_PATH}/${PARAM_CRT_FILENAME}"
+           fi
+        fi
+        CHECKOUT_DIR="${WORKSPACE_OUTPUT_PATH}/${PARAM_SUBDIRECTORY}"
+
+        cleandir() {
+          # Delete any existing contents of the repo directory if it exists.
+          #
+          # We don't just "rm -rf ${CHECKOUT_DIR}" because ${CHECKOUT_DIR} might be "/"
+          # or the root of a mounted volume.
+          if [ -d "${CHECKOUT_DIR}" ] ; then
+            # Delete non-hidden files and directories
+            rm -rf "${CHECKOUT_DIR:?}"/*
+            # Delete files and directories starting with . but excluding ..
+            rm -rf "${CHECKOUT_DIR}"/.[!.]*
+            # Delete files and directories starting with .. plus any other character
+            rm -rf "${CHECKOUT_DIR}"/..?*
+          fi
+        }
+
+        if [ "${PARAM_DELETE_EXISTING}" = "true" ] ; then
+          cleandir || true
+        fi
+
+        test -z "${PARAM_HTTP_PROXY}" || export HTTP_PROXY="${PARAM_HTTP_PROXY}"
+        test -z "${PARAM_HTTPS_PROXY}" || export HTTPS_PROXY="${PARAM_HTTPS_PROXY}"
+        test -z "${PARAM_NO_PROXY}" || export NO_PROXY="${PARAM_NO_PROXY}"
+
+        git config --global --add safe.directory "${WORKSPACE_OUTPUT_PATH}"
+        /ko-app/git-init \
+          -url="${PARAM_URL}" \
+          -revision="${PARAM_REVISION}" \
+          -refspec="${PARAM_REFSPEC}" \
+          -path="${CHECKOUT_DIR}" \
+          -sslVerify="${PARAM_SSL_VERIFY}" \
+          -submodules="${PARAM_SUBMODULES}" \
+          -depth="${PARAM_DEPTH}" \
+          -sparseCheckoutDirectories="${PARAM_SPARSE_CHECKOUT_DIRECTORIES}"
+        cd "${CHECKOUT_DIR}"
+        RESULT_SHA="$(git rev-parse HEAD)"
+        EXIT_CODE="$?"
+        if [ "${EXIT_CODE}" != 0 ] ; then
+          exit "${EXIT_CODE}"
+        fi
+        RESULT_COMMITTER_DATE="$(git log -1 --pretty=%ct)"
+        printf "%s" "${RESULT_COMMITTER_DATE}" > "$(results.committer-date.path)"
+        printf "%s" "${RESULT_SHA}" > "$(results.commit.path)"
+        printf "%s" "${PARAM_URL}" > "$(results.url.path)"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+  workspaces:
+    - description: The git repo will be cloned onto the volume backing this Workspace.
+      name: output
+    - description: |
+        A .ssh directory with private key, known_hosts, config, etc. Copied to
+        the user's home before git commands are executed. Used to authenticate
+        with the git remote when performing the clone. Binding a Secret to this
+        Workspace is strongly recommended over other volume types.
+      name: ssh-directory
+      optional: true
+    - description: |
+        A Workspace containing a .gitconfig and .git-credentials file. These
+        will be copied to the user's home before any git commands are run. Any
+        other files in this Workspace are ignored. It is strongly recommended
+        to use ssh-directory over basic-auth whenever possible and to bind a
+        Secret to this Workspace over other volume types.
+      name: basic-auth
+      optional: true
+    - description: |
+        A workspace containing CA certificates, this will be used by Git to
+        verify the peer with when fetching or pushing over HTTPS.
+      name: ssl-ca-directory
+      optional: true
+
