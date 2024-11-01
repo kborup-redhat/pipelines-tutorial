@@ -1,0 +1,51 @@
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: github-listener
+spec:
+  namespaceSelector: {}
+  resources:
+    kubernetesResource:
+      spec:
+        template:
+          metadata:
+            creationTimestamp: null
+          spec:
+            containers:
+              - name: ''
+                resources:
+                  limits:
+                    cpu: 500m
+                    memory: 128Mi
+                  requests:
+                    cpu: 250m
+                    memory: 64Mi
+            serviceAccountName: pipeline
+  serviceAccountName: pipeline
+  triggers:
+    - name: github-listener
+      interceptors:
+        - params:
+            - name: secretRef
+              value:
+                secretKey: secretToken
+                secretName: github-secret
+            - name: eventTypes
+              value:
+                - pull_request
+          ref:
+            kind: ClusterInterceptor
+            name: github
+        - name: only when PRs are opened
+          params:
+            - name: filter
+              value: 'body.action in [''opened'', ''synchronize'', ''reopened'']'
+          ref:
+            kind: ClusterInterceptor
+            name: cel
+      bindings:
+        - kind: TriggerBinding
+          ref: github-pr-binding
+      template:
+        ref: github-template
